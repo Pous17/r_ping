@@ -1,0 +1,7 @@
+[package]
+name = "r_ping"
+version = "0.1.0"
+authors = ["Martin Reix <https://github.com/Pous17>"]
+
+[dependencies]
+libc = "0.2.43"
