@@ -1,12 +1,14 @@
 extern crate libc;
+use std::io;
 use std::io::Error;
-use std::net::{Ipv4Addr, ToSocketAddrs, IpAddr, TcpStream};
+use std::net::{ToSocketAddrs, IpAddr};
+
+use crate::addrinfo::getaddrinfo;
+
 
 // refer to this https://en.wikipedia.org/wiki/Internet_Control_Message_Protocol
 static ICPM_HEADER_SIZE: usize = 8;
 static ICPM_ECHO_REQUEST: u8 = 8;
-static ICPM_ECHO_REPLY: u8 = 0;
-static IP_HEADER_SIZE: usize = 20;
 
 // structure of a Icpm packet
 #[repr(C)]
@@ -29,34 +31,24 @@ fn calculate_checksum(packet: &[u8]) -> u16 {
         i += 2;
     }
 
+    // check if sum is overflowing the 32-bit memory slot (if so, wrap around)
+    // whenever sum is overflowing, sum >> 16 (shift 16 bits to the right) will be 1, otherwise 0
     while (sum >> 16) > 0 {
+        // 16 upper bits added to 16 lower bits until sum is 16 bits long
         sum = (sum & 0xffff) + (sum >> 16);
     } 
-
+    
+    // negating (flipping every bit)
     !sum as u16
 }
 
-fn get_ip() -> Result<String, Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().collect();
+fn get_ip() -> io::Result<Vec<IpAddr>> {
+    let host = 
 
-    if args.len() != 2 {
-        panic!("Usage: Cargo run <ip>");
-    }
-
-    let address: Vec<_> = args[1].to_socket_addrs()?.collect();
-    
-    // checks for https
-    // let https = address.iter().any(|x| {
-    //     if let Ok(socket_addr) = x {
-    //         if let IpAddr::V4(_) = socket_addr.ip() {
-    //             return socket_addr.port() == 443;
-    //         }
-    //     }
-    //     false
-    // });
-
-    Ok("Hello".to_string())
+    let mut addrs = Vec::new()
+    for addr in 
 }
+
 
 fn main() {
     // crete a raw socket
@@ -68,7 +60,6 @@ fn main() {
         panic!("Failed to create socket: {:?}", Error::last_os_error());
     };
     
-    // TODO more doc to read about that
     let one: libc::c_int = 1;
     let result = unsafe {
         libc::setsockopt(
@@ -85,7 +76,49 @@ fn main() {
         panic!("Failed to set socket options: {:?}", Error::last_os_error());
     }
 
-    let ping_ip = get_ip();
+    let ping_ip = get_ip().unwrap(  );
 
+    // build the packet
+    let mut packet = vec![0; ICPM_HEADER_SIZE];
+    let mut icpm_packet = unsafe { &mut *(packet.as_mut_ptr() as *mut Icpm) };
+    icpm_packet.icpm_type = ICPM_ECHO_REQUEST;
+    icpm_packet.icpm_code = 0;
+    icpm_packet.icpm_identifier = 9;
+    icpm_packet.icpm_sequence = 1;
+
+    // calculate checksum
+    icpm_packet.icpm_checksum = calculate_checksum(&packet);
+
+    // TODO might need to support ipv6 later 
+    // send the packet
+    let dest_socket = libc::sockaddr_in {
+        sin_family: libc::AF_INET as u8,
+        sin_port: 0,
+        sin_addr: libc::in_addr {
+            s_addr: ping_ip
+                .to_string()
+                .parse::<u32>()
+                .expect("Failed to parse destination IP")
+                .to_be(), // to big endian
+        },
+        sin_zero: [0; 8],
+        sin_len: 0,
+    };
+
+    let result = unsafe {
+        libc::sendto (
+            socket,
+            packet.as_ptr() as *const libc::c_void,
+            packet.len(),
+            0,
+            &dest_socket as *const _ as *const libc::sockaddr,
+            std::mem::size_of_val(&dest_socket) as libc::socklen_t,
+        )
+    };
+
+    if result < 0 {
+        panic!("Failed to send packet: {:?}", Error::last_os_error());
+    }
+
+    println!("ICMP Echo Request sent to {}", ping_ip);
 }
-

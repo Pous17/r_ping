@@ -5,3 +5,4 @@ authors = ["Martin Reix <https://github.com/Pous17>"]
 
 [dependencies]
 libc = "0.2.43"
+addrinfo = "0.3.0"
